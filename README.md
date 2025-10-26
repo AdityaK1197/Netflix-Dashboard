@@ -1,6 +1,6 @@
-# Netflix Data Cleaning & BI Pipeline
+# 🚀 Netflix Data Cleaning & BI Pipeline
 
-# Project Overview
+# 🎯 Project Overview
 
 This project implements a SQL-based ETL pipeline for Netflix data. The pipeline ingests raw Netflix data, cleans and transforms it, and organizes it into layers for Business Intelligence (BI) and analytics purposes. The project follows a Bronze → Silver → Gold data architecture pattern.
 
@@ -126,7 +126,7 @@ Note: Paths in the SQL scripts may need to be updated according to your local en
 
 • Integration with IMDb data for enhanced content insights.
 
-# Power BI Dashboard
+# 🚀 Power BI Dashboard
 
 ![my image](https://github.com/AdityaK1197/Netflix-Dashboard/blob/f10d162696cd42ab04a31110fbeecd1b6b3f6f20/Netflix_page-1.jpg)
 
@@ -135,7 +135,7 @@ Note: Paths in the SQL scripts may need to be updated according to your local en
 ![my image](https://github.com/AdityaK1197/Netflix-Dashboard/blob/5433e63c160f680fb64ef3f8d1d28e9937c890cd/Netflix_page-3.jpg)
 
 
-# Overview
+# 🎯 Overview
 
 This Power BI report visualizes the Netflix dataset processed through the ETL pipeline. It combines content, financial, and subscriber data to provide actionable business insights.
 
