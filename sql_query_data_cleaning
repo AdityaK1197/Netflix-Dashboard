@@ -1,0 +1,341 @@
+--USE master
+--CREATE DATABASE	netflix_data_cleaning
+--GO
+USE netflix_data_cleaning;
+--Go
+--CREATE SCHEMA bronze
+--GO
+--CREATE SCHEMA silver
+--GO
+--CREATE SCHEMA gold
+
+--==========================================================================================================================
+--LOADIONG RAW DATA IN BRONZE LAYER FROM EXCEL
+--==========================================================================================================================
+GO
+
+CREATE or ALTER PROCEDURE bronze.load_bronze as 
+
+BEGIN
+
+IF OBJECT_ID ('bronze.netflix','U') IS NOT NULL
+DROP TABLE bronze.netflix
+
+CREATE TABLE bronze.netflix (
+show_id NVARCHAR (50) NOT NULL PRIMARY KEY,
+type VARCHAR (50) NOT NULL,
+title NVARCHAR (450) NOT NULL,
+director NVARCHAR (450) NOT NULL,
+country NVARCHAR (450) NOT NULL,
+date_added NVARCHAR (450) NOT NULL,
+release_year NVARCHAR (450) NOT NULL,
+rating NVARCHAR (450) NOT NULL,
+duration NVARCHAR (450) NOT NULL,
+listed_in NVARCHAR (450) NOT NULL
+)
+
+BULK INSERT bronze.netflix
+FROM 'path\netflix_data_cleaning\netflix_pipe.csv'
+WITH ( FIRSTROW = 2, FIELDTERMINATOR = '|', ROWTERMINATOR = '0X0a', CODEPAGE = '65001',  FIELDQUOTE = '"',TABLOCK);
+
+END;
+
+--==============================================================================================================================
+--DATA CLEANING INTO SILVER LAYER
+--==============================================================================================================================
+
+GO
+CREATE or ALTER PROCEDURE silver.load_silver as
+
+BEGIN
+
+IF OBJECT_ID('silver.netflix','U') IS NOT NULL
+DROP TABLE silver.netflix
+
+CREATE TABLE silver.netflix(
+show_id NVARCHAR (50) NOT NULL PRIMARY KEY,
+type VARCHAR (50) NOT NULL,
+title NVARCHAR (450) NOT NULL,
+director NVARCHAR (450) NOT NULL,
+country NVARCHAR (450) NOT NULL,
+date_added DATE NOT NULL,
+release_year VARCHAR (10) NOT NULL,
+rating NVARCHAR (50) NOT NULL,
+duration NVARCHAR (50) NOT NULL,
+listed_in NVARCHAR (450) NOT NULL
+)
+
+INSERT INTO silver.netflix (show_id,type,title,director,country,date_added,release_year,rating,duration,listed_in)
+SELECT 
+TRIM(REPLACE(show_id,'"','')) as 'show_id',
+TRIM(type) as 'type',
+TRIM(REPLACE(title,'"','')) as 'title',
+TRIM(REPLACE(director,'"','')) as 'director',
+TRIM(REPLACE(country,'"','')) as 'country',
+CASE
+when date_added like '%/%' THEN CONVERT(VARCHAR(10),TRY_CAST(REPLACE(date_added,'/','-') as date),23)
+WHEN date_added like '%"%' then CONVERT(VARCHAR(10), TRY_CAST(REPLACE(date_added,'"','-') as DATE),23)
+ELSE date_added END as date_added,
+TRIM(REPLACE(release_year,'"','')) as 'release_year',
+TRIM(REPLACE(rating,'"','')) as 'rating',
+TRIM(duration) as 'duration',
+TRIM(REPLACE(REPLACE(listed_in,',',''),'"','')) as 'listed_in'
+from bronze.netflix;
+
+--=================================================================================================
+--INSERTED RATINGS TABLE TO USE IN GOLD LAYER FOR BI
+--=================================================================================================
+
+IF OBJECT_ID('silver.category','U') IS NOT NULL
+DROP TABLE silver.category
+
+CREATE TABLE silver.category (
+rating NVARCHAR(50) PRIMARY KEY NOT NULL,
+age_group NVARCHAR(50) NOT NULL
+)
+INSERT INTO silver.category
+values
+    ('TV-Y', 'All'),
+    ('TV-Y7', 'Older Children'),
+    ('TV-Y7-FV', 'Older Children'),
+    ('TV-G', 'All'),
+    ('TV-PG', 'Parental Guidance'),
+    ('TV-14', 'Teens'),
+    ('TV-MA', 'Adults'),
+    ('G', 'All'),
+    ('PG', 'Parental Guidance'),
+    ('PG-13', 'Teens'),
+    ('R', 'Adults'),
+    ('NC-17', 'Adults'),
+    ('NR', 'Unrated'),
+    ('UR', 'Unrated')	
+
+--==================================================================================================
+--CREATED GENRE MAPPING FOR GOLD LAYER, BI USE
+--==================================================================================================
+
+IF OBJECT_ID('silver.genre_mapping','U') IS NOT NULL
+DROP TABLE silver.genre_mapping;
+
+CREATE TABLE silver.genre_mapping (
+    genre NVARCHAR(100) PRIMARY KEY,
+    broad_genre NVARCHAR(50)
+);
+
+INSERT INTO silver.genre_mapping (genre, broad_genre)
+VALUES
+('Action & Adventure', 'Action / Adventure'),
+('TV Action & Adventure', 'Action / Adventure'),
+('Sports Movies', 'Action / Adventure'),
+('Dramas', 'Drama'),
+('TV Dramas', 'Drama'),
+('Romantic Movies', 'Drama'),
+('Romantic TV Shows', 'Drama'),
+('Comedies', 'Comedy'),
+('TV Comedies', 'Comedy'),
+('Stand-Up Comedy & Talk Shows', 'Comedy'),
+('Horror Movies', 'Horror / Thriller'),
+('TV Horror', 'Horror / Thriller'),
+('Thrillers', 'Horror / Thriller'),
+('TV Thrillers', 'Horror / Thriller'),
+('TV Mysteries', 'Horror / Thriller'),
+('Crime TV Shows', 'Horror / Thriller'),
+('Sci-Fi & Fantasy', 'Sci-Fi / Fantasy'),
+('TV Sci-Fi & Fantasy', 'Sci-Fi / Fantasy'),
+('Anime Series', 'Sci-Fi / Fantasy'),
+('Anime Features', 'Sci-Fi / Fantasy'),
+('Documentaries', 'Documentary / Reality'),
+('Docuseries', 'Documentary / Reality'),
+('Reality TV', 'Documentary / Reality'),
+('Science & Nature TV', 'Documentary / Reality'),
+('Faith & Spirituality', 'Documentary / Reality'),
+('Children & Family Movies', 'Family / Kids'),
+('Kids'' TV', 'Family / Kids'),
+('Music & Musicals', 'Music / Musical'),
+('Independent Movies', 'Independent / Cult / Classic'),
+('Classic Movies', 'Independent / Cult / Classic'),
+('Classic & Cult TV', 'Independent / Cult / Classic'),
+('Cult Movies', 'Independent / Cult / Classic'),
+('International Movies', 'International / Foreign'),
+('International TV Shows', 'International / Foreign'),
+('Spanish-Language TV Shows', 'International / Foreign'),
+('Korean TV Shows', 'International / Foreign'),
+('British TV Shows', 'International / Foreign'),
+('LGBTQ Movies', 'LGBTQ'),
+('Movies','Movies'),
+('Stand-UP Comedy','Comedy'),
+('TV Shows','TV Shows')
+;
+
+--===============================================================================
+--CREATE IMDB TITLE TABLE FOR BI USE 
+--===============================================================================
+
+IF OBJECT_ID ('silver.title_imdb_info','U') IS NOT NULL
+DROP TABLE silver.title_imdb_info
+
+create table silver.title_imdb_info (
+tconst NVARCHAR(500),
+titleType NVARCHAR(500),
+primaryTitle NVARCHAR(500),
+originalTitle NVARCHAR(500),
+isAdult NVARCHAR(500),
+startYear NVARCHAR(500),
+endYear NVARCHAR(500),
+runtimeMinutes NVARCHAR(500),
+genres NVARCHAR(900)
+)
+
+BULK INSERT silver.title_imdb_info
+FROM 'path\netflix_data_cleaning\title.basics.tsv\title.basics.csv'
+WITH ( FIRSTROW = 2, FIELDTERMINATOR = ',',  FIELDQUOTE = '"',ROWTERMINATOR = '0X0a', TABLOCK , CODEPAGE = '65001')
+
+--===============================================================================
+--CREATE IMDB RATINGS TABLE FOR BI USE 
+--===============================================================================
+
+IF OBJECT_ID ('silver.imdb_ratings','U') IS NOT NULL
+DROP TABLE silver.imdb_ratings 
+
+create table silver.imdb_ratings (
+tconst NVARCHAR(100),
+averageRating FLOAT(2),
+numVotes NVARCHAR(100)
+)
+
+BULK INSERT silver.imdb_ratings
+FROM 'path\netflix_data_cleaning\title.ratings.tsv\title.ratings.csv'
+WITH ( FIRSTROW = 2, FIELDTERMINATOR = ',', ROWTERMINATOR = '0X0a', CODEPAGE = '65001',TABLOCK)
+
+--======================================================================================================
+--CREATE regionmapping TABLE FOR BI USE
+--======================================================================================================
+
+IF OBJECT_ID ('silver.country_region_mapping','U') IS NOT NULL
+DROP TABLE silver.country_region_mapping 
+
+CREATE TABLE silver.country_region_mapping (
+    country NVARCHAR(100) PRIMARY KEY,
+    region NVARCHAR(100)
+);
+
+INSERT INTO silver.country_region_mapping (country, region) VALUES
+('Puerto Rico', 'North America'),
+('Finland', 'Europe'),
+('South Korea', 'Asia'),
+('Guatemala', 'North America'),
+('Vietnam', 'Asia'),
+('New Zealand', 'Oceania'),
+('Egypt', 'Africa'),
+('Italy', 'Europe'),
+('Brazil', 'South America'),
+('Netherlands', 'Europe'),
+('Namibia', 'Africa'),
+('Cameroon', 'Africa'),
+('Jordan', 'Asia'),
+('Belarus', 'Europe'),
+('Hong Kong', 'Asia'),
+('Malaysia', 'Asia'),
+('Indonesia', 'Asia'),
+('Jamaica', 'North America'),
+('Germany', 'Europe'),
+('Philippines', 'Asia'),
+('Iceland', 'Europe'),
+('Senegal', 'Africa'),
+('Kuwait', 'Asia'),
+('Hungary', 'Europe'),
+('Cyprus', 'Europe'),
+('Switzerland', 'Europe'),
+('United States', 'North America'),
+('Nigeria', 'Africa'),
+('Lebanon', 'Asia'),
+('Saudi Arabia', 'Asia'),
+('Australia', 'Oceania'),
+('Mauritius', 'Africa'),
+('United Kingdom', 'Europe'),
+('Mexico', 'North America'),
+('Sweden', 'Europe'),
+('Kenya', 'Africa'),
+('Ukraine', 'Europe'),
+('China', 'Asia'),
+('Argentina', 'South America'),
+('Serbia', 'Europe'),
+('Peru', 'South America'),
+('India', 'Asia'),
+('Croatia', 'Europe'),
+('West Germany', 'Europe'),
+('Austria', 'Europe'),
+('Greece', 'Europe'),
+('United Arab Emirates', 'Asia'),
+('Russia', 'Europe'),
+('Israel', 'Asia'),
+('Uruguay', 'South America'),
+('Zimbabwe', 'Africa'),
+('Syria', 'Asia'),
+('Poland', 'Europe'),
+('Canada', 'North America'),
+('Bulgaria', 'Europe'),
+('Slovenia', 'Europe'),
+('Ireland', 'Europe'),
+('Mozambique', 'Africa'),
+('Somalia', 'Africa'),
+('Thailand', 'Asia'),
+('Norway', 'Europe'),
+('France', 'Europe'),
+('Luxembourg', 'Europe'),
+('Belgium', 'Europe'),
+('Japan', 'Asia'),
+('Georgia', 'Asia'),
+('Spain', 'Europe'),
+('Turkey', 'Asia'),
+('Venezuela', 'South America'),
+('Not Given', 'Unknown'),
+('Bangladesh', 'Asia'),
+('Ghana', 'Africa'),
+('Pakistan', 'Asia'),
+('Denmark', 'Europe'),
+('Romania', 'Europe'),
+('Singapore', 'Asia'),
+('Colombia', 'South America'),
+('Cambodia', 'Asia'),
+('Iran', 'Asia'),
+('Chile', 'South America'),
+('South Africa', 'Africa'),
+('Soviet Union', 'Europe'),
+('Czech Republic', 'Europe'),
+('Portugal', 'Europe'),
+('Taiwan', 'Asia'),
+('Paraguay', 'South America');
+
+--======================================================================================================
+--CREATE FINANCIALS TABLE FOR BI USE
+--======================================================================================================
+
+IF OBJECT_ID ('silver.netflix_financials', 'U') IS NOT NULL
+DROP TABLE silver.netflix_financials
+
+CREATE TABLE silver.netflix_financials (
+Year NVARCHAR(10) UNIQUE NOT NULL,
+Revenue INT, 
+subscription_cost INT,
+Fulfillment_cost INT,
+Technology_development INT,
+Marketing INT,
+General_administrative INT,
+Interest INT,
+Disposals_DVD INT,
+Income INT,
+Expense INT,
+avg_paid_sub INT,
+trial_sub_attheend INT
+)
+
+BULK INSERT silver.netflix_financials
+FROM 'path\netflix_data_cleaning\netflix_financials.csv'
+WITH ( FIRSTROW = 2, FIELDTERMINATOR = ',', ROWTERMINATOR = '0X0a', CODEPAGE = '65001', TABLOCK)
+
+
+END;
+
+
+
